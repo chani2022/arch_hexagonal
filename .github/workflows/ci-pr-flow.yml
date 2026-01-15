@@ -34,11 +34,43 @@ jobs:
     
     - name: Install dependencies
       run: composer install --no-progress --no-interaction
-    
-    - name: Run database migrations
+
+    - name: Wait for MySQL
       run: |
+        echo "⏳ Attente du démarrage de MySQL..."
+        for i in {1..30}; do
+          if mysqladmin ping -h 127.0.0.1 --silent; then
+            echo "✅ MySQL est prêt"
+            break
+          fi
+          echo "Attente... ($i/30)"
+          sleep 2
+        done
+    
+    - name: Setup database
+      run: |
+        # Vérifier la connexion
+        echo "🔍 Vérification de la connexion MySQL..."
+        mysql -h 127.0.0.1 -u root -e "SHOW DATABASES;" || echo "Connexion échouée"
+        
+        # Créer la base si elle n'existe pas
+        echo "🗄️  Création de la base de données..."
         php bin/console doctrine:database:create --if-not-exists --env=test
+        
+        # Afficher les bases existantes
+        echo "📊 Bases de données disponibles :"
+        mysql -h 127.0.0.1 -u root -e "SHOW DATABASES;"
+        
+        # Lancer les migrations
+        echo "🚀 Exécution des migrations..."
         php bin/console doctrine:migrations:migrate --no-interaction --env=test
+        
+        echo "✅ Base configurée"
+    
+    # - name: Run database migrations
+    #   run: |
+    #     php bin/console doctrine:database:create --if-not-exists --env=test
+    #     php bin/console doctrine:migrations:migrate --no-interaction --env=test
     
     - name: Run tests
       run: php bin/phpunit --colors=always
