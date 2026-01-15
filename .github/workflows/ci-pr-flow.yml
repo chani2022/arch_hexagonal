@@ -1,0 +1,121 @@
+# .github/workflows/test-gate.yml
+name: Test Gate
+
+on:
+  push:
+    branches: [feat/**]  # Tests sur les push vers feat/*
+
+jobs:
+  # Job de tests qui doit passer pour pouvoir créer une PR
+  test-feature:
+    name: Test Feature Branch
+    if: startsWith(github.ref, 'refs/heads/feat/')
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        extensions: pdo_mysql
+    
+    - name: Install dependencies
+      run: composer install --no-progress --no-interaction
+    
+    - name: Setup test environment
+      run: |
+        # Créer/ajuster .env.test
+        if [ ! -f .env.test ]; then
+          cp .env .env.test 2>/dev/null || echo "APP_ENV=test" > .env.test
+          echo "DATABASE_URL=mysql://root:root@127.0.0.1:3306/app_test" >> .env.test
+        fi
+    
+    - name: Run database migrations
+      run: |
+        php bin/console doctrine:database:create --if-not-exists --env=test
+        php bin/console doctrine:migrations:migrate --no-interaction --env=test
+    
+    - name: Run tests
+      run: php bin/phpunit --colors=always
+    
+    - name: Create Test Passed Status
+      if: success()
+      run: |
+        echo "✅ TESTS PASSED - Ready for PR"
+        echo ""
+        echo "📋 Prochaines étapes :"
+        echo "1. Créer une PR vers 'dev' :"
+        echo "   https://github.com/${{ github.repository }}/compare/dev...${{ github.ref_name }}"
+        echo ""
+        echo "2. Après merge vers dev, créer une PR vers 'main' :"
+        echo "   https://github.com/${{ github.repository }}/compare/main...dev"
+
+  # Workflow pour valider les PR vers dev et main
+  validate-pr:
+    name: Validate PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+
+    steps:
+    - name: Checkout PR code
+      uses: actions/checkout@v4
+    
+    - name: Detect target branch
+      run: |
+        echo "PR de: ${{ github.head_ref }}"
+        echo "PR vers: ${{ github.base_ref }}"
+        echo ""
+        if [ "${{ github.base_ref }}" == "dev" ]; then
+          echo "🔵 Validation PR vers DEV"
+        elif [ "${{ github.base_ref }}" == "main" ]; then
+          echo "🟢 Validation PR vers MAIN"
+        else
+          echo "⚪ Validation PR vers ${{ github.base_ref }}"
+        fi
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        extensions: pdo_mysql
+    
+    - name: Install dependencies
+      run: composer install --no-progress --no-interaction
+    
+    - name: Run tests
+      run: php bin/phpunit
+    
+    - name: PR Status Check
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ PR VALIDÉE - Tests passés sur ${{ github.base_ref }}"
+          if [ "${{ github.base_ref }}" == "dev" ]; then
+            echo "📌 Après merge, prochaine étape : PR vers main"
+          fi
+        else
+          echo "❌ PR REJETÉE - Tests échoués"
+          echo "Veuillez corriger les tests avant de re-soumettre"
+        fi
