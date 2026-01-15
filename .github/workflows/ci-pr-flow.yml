@@ -40,7 +40,7 @@ jobs:
         # Créer/ajuster .env.test
         if [ ! -f .env.test ]; then
           cp .env .env.test 2>/dev/null || echo "APP_ENV=test" > .env.test
-          echo "DATABASE_URL=mysql://root:root@127.0.0.1:3306/app_test" >> .env.test
+        #   echo "DATABASE_URL=mysql://root:root@127.0.0.1:3306/app_test" >> .env.test
         fi
     
     - name: Run database migrations
